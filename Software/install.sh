@@ -78,23 +78,31 @@ else
   echo 'i2c-dev' >> /etc/modules
 fi
 
-i2c_arm="$(grep 'dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
-i2c_arm="$(echo -e "${i2c_arm}" | sed -e 's/^[[:space:]]*//')"
-if [ -z "${i2c_arm}" ] || [ "${i2c_arm}" = "#"* ]; then
-  echo 'dtparam=i2c_arm=on' >> "${BOOT_CONFIG_FILE}"
+active_i2c="$(grep -E '^[^#]*dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
+if [ -n "${active_i2c}" ]; then
+    echo 'Seems i2c_arm parameter already set, skip this step'
 else
-  echo 'Seems i2c_arm parameter already set, skip this step'
+    commented_i2c="$(grep -E '^#.*dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
+    if [ -n "${commented_i2c}" ]; then
+        sed -i 's/^#.*\(dtparam=i2c_arm=on\)/\1/' "${BOOT_CONFIG_FILE}"
+    else
+        echo 'dtparam=i2c_arm=on' >> "${BOOT_CONFIG_FILE}"
+    fi
 fi
 
 # Setting Bluetooth to use mini-UART
 echo
 echo '>>> Setting Bluetooth to use mini-UART...'
-miniuart="$(grep 'dtoverlay=miniuart-bt' "${BOOT_CONFIG_FILE}" || true)"
-miniuart="$(echo -e "${miniuart}" | sed -e 's/^[[:space:]]*//')"
-if [ -z "${miniuart}" ] || [ "${miniuart}" = "#"* ]; then
-  echo 'dtoverlay=miniuart-bt' >> "${BOOT_CONFIG_FILE}"
+active_uart="$(grep -E '^[^#]*dtoverlay=miniuart-bt' "${BOOT_CONFIG_FILE}" || true)"
+if [ -n "${active_uart}" ]; then
+    echo 'Seems setting Bluetooth to use mini-UART is done already, skip this step'
 else
-  echo 'Seems setting Bluetooth to use mini-UART is done already, skip this step'
+    commented_uart="$(grep -E '^#.*dtoverlay=miniuart-bt' "${BOOT_CONFIG_FILE}" || true)"
+    if [ -n "${commented_uart}" ]; then
+        sed -i 's/^#.*\(dtoverlay=miniuart-bt\)/\1/' "${BOOT_CONFIG_FILE}"
+    else
+        echo 'dtoverlay=miniuart-bt' >> "${BOOT_CONFIG_FILE}"
+    fi
 fi
 
 # Install i2c-tools and git
