@@ -15,19 +15,15 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
-# Set target directory
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wittypi"
+# Set home directory as target directory for wittypi software
+DIR="/home/${SUDO_USER}/wittypi"
 
 # Create error counter
 ERR=0
 
-# Get config file
-if [ "$(lsb_release -si)" = "Ubuntu" ]; then
-  BOOT_CONFIG_FILE='/boot/firmware/usercfg.txt'
-else
-  BOOT_CONFIG_FILE='/boot/firmware/config.txt'
-  [ ! -e "${BOOT_CONFIG_FILE}" ] && BOOT_CONFIG_FILE='/boot/config.txt'
-fi
+# Set path to config.txt file
+BOOT_CONFIG_FILE='/boot/firmware/config.txt'
+[ ! -e "${BOOT_CONFIG_FILE}" ] && BOOT_CONFIG_FILE='/boot/config.txt'
 
 # Function for error handling
 handle_error() {
