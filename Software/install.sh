@@ -1,35 +1,51 @@
-[ -z $BASH ] && { exec bash "$0" "$@" || exit; }
 #!/bin/bash
 # file: install.sh
 #
 # This script will install required software for Witty Pi.
 # It is recommended to run it in your home directory.
 #
+# Includes modifications from https://github.com/maxsitt/Witty-Pi-4
 
-# check if sudo is used
+# Set strict error handling
+set -euo pipefail
+
+# Check if sudo is used
 if [ "$(id -u)" != 0 ]; then
   echo 'Sorry, you need to run this script with sudo'
   exit 1
 fi
 
-# target directory
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/wittypi"
+# Set target directory
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wittypi"
 
-# error counter
+# Create error counter
 ERR=0
 
-# config file
-if [ "$(lsb_release -si)" == "Ubuntu" ]; then
-  # Ubuntu
-  BOOT_CONFIG_FILE="/boot/firmware/usercfg.txt"
+# Get config file
+if [ "$(lsb_release -si)" = "Ubuntu" ]; then
+  BOOT_CONFIG_FILE='/boot/firmware/usercfg.txt'
 else
-  # Raspberry Pi OS ("$(lsb_release -si)" == "Debian") and others
-  if [ -e /boot/firmware/config.txt ] ; then
-    BOOT_CONFIG_FILE="/boot/firmware/config.txt"
-  else
-    BOOT_CONFIG_FILE="/boot/config.txt"
-  fi
+  BOOT_CONFIG_FILE='/boot/firmware/config.txt'
+  [ ! -e "${BOOT_CONFIG_FILE}" ] && BOOT_CONFIG_FILE='/boot/config.txt'
 fi
+
+# Function for error handling
+handle_error() {
+  echo "Error: $1" >&2
+  ((ERR++))
+}
+
+# Function for package installation
+install_package() {
+  local package="$1"
+  if ! command -v "${package}" &> /dev/null; then
+    echo
+    echo ">>> Installing ${package}..."
+    apt install -y "${package}" || handle_error "Failed to install ${package}"
+  else
+    echo "${package} is already installed"
+  fi
+}
 
 echo '================================================================================'
 echo '|                                                                              |'
@@ -37,8 +53,20 @@ echo '|                   Witty Pi Software Installation Script                 
 echo '|                                                                              |'
 echo '================================================================================'
 
-# enable I2C on Raspberry Pi
-echo '>>> Enable I2C'
+# Make sure en_GB.UTF-8 locale is installed
+echo
+echo '>>> Make sure en_GB.UTF-8 locale is installed...'
+if locale -a | grep -q 'en_GB.utf8'; then
+  echo 'en_GB.UTF-8 locale is already installed.'
+else
+  echo '>>> Installing en_GB.UTF-8 locale...'
+  sed -i.bak '/en_GB.UTF-8/s/^#//g' /etc/locale.gen
+  locale-gen || ((ERR++))
+fi
+
+# Enable I2C on Raspberry Pi
+echo
+echo '>>> Enabling I2C...'
 if grep -q 'i2c-bcm2708' /etc/modules; then
   echo 'Seems i2c-bcm2708 module already exists, skip this step.'
 else
@@ -50,111 +78,91 @@ else
   echo 'i2c-dev' >> /etc/modules
 fi
 
-i2c1=$(grep 'dtparam=i2c1=on' ${BOOT_CONFIG_FILE})
-i2c1=$(echo -e "$i2c1" | sed -e 's/^[[:space:]]*//')
-if [[ -z "$i2c1" || "$i2c1" == "#"* ]]; then
-  echo 'dtparam=i2c1=on' >> ${BOOT_CONFIG_FILE}
+i2c_arm="$(grep 'dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
+i2c_arm="$(echo -e "${i2c_arm}" | sed -e 's/^[[:space:]]*//')"
+if [ -z "${i2c_arm}" ] || [ "${i2c_arm}" = "#"* ]; then
+  echo 'dtparam=i2c_arm=on' >> "${BOOT_CONFIG_FILE}"
 else
-  echo 'Seems i2c1 parameter already set, skip this step.'
+  echo 'Seems i2c_arm parameter already set, skip this step'
 fi
 
-i2c_arm=$(grep 'dtparam=i2c_arm=on' ${BOOT_CONFIG_FILE})
-i2c_arm=$(echo -e "$i2c_arm" | sed -e 's/^[[:space:]]*//')
-if [[ -z "$i2c_arm" || "$i2c_arm" == "#"* ]]; then
-  echo 'dtparam=i2c_arm=on' >> ${BOOT_CONFIG_FILE}
+# Setting Bluetooth to use mini-UART
+echo
+echo '>>> Setting Bluetooth to use mini-UART...'
+miniuart="$(grep 'dtoverlay=miniuart-bt' "${BOOT_CONFIG_FILE}" || true)"
+miniuart="$(echo -e "${miniuart}" | sed -e 's/^[[:space:]]*//')"
+if [ -z "${miniuart}" ] || [ "${miniuart}" = "#"* ]; then
+  echo 'dtoverlay=miniuart-bt' >> "${BOOT_CONFIG_FILE}"
 else
-  echo 'Seems i2c_arm parameter already set, skip this step.'
+  echo 'Seems setting Bluetooth to use mini-UART is done already, skip this step'
 fi
 
-miniuart=$(grep 'dtoverlay=miniuart-bt' ${BOOT_CONFIG_FILE})
-miniuart=$(echo -e "$miniuart" | sed -e 's/^[[:space:]]*//')
-if [[ -z "$miniuart" || "$miniuart" == "#"* ]]; then
-  echo 'dtoverlay=miniuart-bt' >> ${BOOT_CONFIG_FILE}
-else
-  echo 'Seems setting Bluetooth to use mini-UART is done already, skip this step.'
-fi
+# Install i2c-tools and git
+echo
+apt update || handle_error "Failed to update package list"
+install_package i2c-tools
+install_package git
 
-if [ -f /etc/modprobe.d/raspi-blacklist.conf ]; then
-  sed -i 's/^blacklist spi-bcm2708/#blacklist spi-bcm2708/' /etc/modprobe.d/raspi-blacklist.conf
-  sed -i 's/^blacklist i2c-bcm2708/#blacklist i2c-bcm2708/' /etc/modprobe.d/raspi-blacklist.conf
-else
-  echo 'File raspi-blacklist.conf does not exist, skip this step.'
-fi
+# Install WiringPi
+echo
+echo '>>> Installing WiringPi...'
+if ! command -v gpio &> /dev/null; then
+  os="$(lsb_release -r | grep 'Release:' | sed 's/Release:\s*//')"
+  arch="$(dpkg --print-architecture)"
 
-# install i2c-tools
-echo '>>> Install i2c-tools'
-if hash i2cget 2>/dev/null; then
-  echo 'Seems i2c-tools is installed already, skip this step.'
-else
-  apt install -y i2c-tools || ((ERR++))
-fi
-
-# make sure en_GB.UTF-8 locale is installed
-echo '>>> Make sure en_GB.UTF-8 locale is installed'
-locale_commentout=$(sed -n 's/\(#\).*en_GB.UTF-8 UTF-8/1/p' /etc/locale.gen)
-if [[ $locale_commentout -ne 1 ]]; then
-  echo 'Seems en_GB.UTF-8 locale has been installed, skip this step.'
-else
-  sed -i.bak 's/^.*\(en_GB.UTF-8[[:blank:]]\+UTF-8\)/\1/' /etc/locale.gen
-  locale-gen
-fi
-
-# install wiringPi
-if hash gpio 2>/dev/null; then
-  echo 'Seems wiringPi has been installed, skip this step.'
-else
-  os=$(lsb_release -r | grep 'Release:' | sed 's/Release:\s*//')
-  if [ $os -le 10 ]; then
-    apt install -y wiringpi || ((ERR++))
-  elif [ $os -eq 11 ]; then
-    wget https://github.com/WiringPi/WiringPi/releases/download/3.2/wiringpi_3.2-bullseye_armhf.deb -O wiringpi.deb || ((ERR++))
-    apt install -y ./wiringpi.deb || ((ERR++))
-    rm wiringpi.deb
+  if [ "${os}" -le 10 ]; then
+    install_package wiringpi
   else
-    arch=$(dpkg --print-architecture)
-    if [ "$arch" == "arm64" ]; then
-      wget https://github.com/WiringPi/WiringPi/releases/download/3.2/wiringpi_3.2_arm64.deb -O wiringpi.deb || ((ERR++))
+    WIRINGPI_VERSION='3.14'
+    [ "${os}" -eq 11 ] && WIRINGPI_VERSION='3.2'
+
+    WIRINGPI_DEB="wiringpi_${WIRINGPI_VERSION}_${arch}.deb"
+    [ "${os}" -eq 11 ] && WIRINGPI_DEB="wiringpi_${WIRINGPI_VERSION}-bullseye_armhf.deb"
+
+    wget -q "https://github.com/WiringPi/WiringPi/releases/download/${WIRINGPI_VERSION}/${WIRINGPI_DEB}" -O wiringpi.deb || handle_error "Failed to download WiringPi"
+    apt install -y ./wiringpi.deb || handle_error "Failed to install WiringPi"
+    rm wiringpi.deb
+  fi
+else
+  echo 'WiringPi is already installed'
+fi
+
+# Install wittypi from forked repository
+if [ "${ERR}" -eq 0 ]; then
+  echo
+  echo '>>> Installing wittypi...'
+  if [ ! -d 'wittypi' ]; then
+    git clone --depth 1 --single-branch --branch main --no-tags \
+        https://github.com/maxsitt/Witty-Pi-4.git tmp_wittypi || handle_error 'Git clone failed'
+
+    if [ -d "tmp_wittypi/Software/wittypi" ]; then
+      mv tmp_wittypi/Software/wittypi .
+      rm -rf tmp_wittypi
+
+      # Make scripts executable
+      find wittypi -name "*.sh" -exec chmod +x {} \;
+
+      # Set up service
+      sed -e "s#/home/pi/wittypi#${DIR}#g" wittypi/init.sh > /etc/init.d/wittypi
+      chmod +x /etc/init.d/wittypi
+      update-rc.d wittypi defaults || handle_error "Failed to set up service"
+
+      # Create log files
+      touch wittypi/{wittyPi,schedule}.log
+      chown -R "$SUDO_USER:$(id -g -n "$SUDO_USER")" wittypi || handle_error "Failed to set permissions"
     else
-      wget https://github.com/WiringPi/WiringPi/releases/download/3.2/wiringpi_3.2_armhf.deb -O wiringpi.deb || ((ERR++))
+      handle_error "Required directory not found in cloned repository"
     fi
-    apt install -y ./wiringpi.deb || ((ERR++))
-    rm wiringpi.deb
-  fi
-fi
-
-# install wittyPi
-if [ $ERR -eq 0 ]; then
-  echo '>>> Install wittypi'
-  if [ -d "wittypi" ]; then
-    echo 'Seems wittypi is installed already, skip this step.'
   else
-    wget https://www.uugear.com/repo/WittyPi4/LATEST -O wittyPi.zip || ((ERR++))
-    unzip wittyPi.zip -d wittypi || ((ERR++))
-    cd wittypi
-    chmod +x wittyPi.sh
-    chmod +x daemon.sh
-    chmod +x runScript.sh
-    chmod +x beforeScript.sh
-    chmod +x afterStartup.sh
-    chmod +x beforeShutdown.sh
-    sed -e "s#/home/pi/wittypi#$DIR#g" init.sh >/etc/init.d/wittypi
-    chmod +x /etc/init.d/wittypi
-    update-rc.d wittypi defaults || ((ERR++))
-    touch wittyPi.log
-    touch schedule.log
-    cd ..
-    chown -R $SUDO_USER:$(id -g -n $SUDO_USER) wittypi || ((ERR++))
-    sleep 2
-    rm wittyPi.zip
+    echo 'WittyPi is already installed'
   fi
 fi
-
-# install UUGear Web Interface
-curl https://www.uugear.com/repo/UWI/installUWI.sh | bash
 
 echo
-if [ $ERR -eq 0 ]; then
-  echo '>>> All done. Please reboot your Pi :-)'
+if [ "${ERR}" -eq 0 ]; then
+  echo 'Installation successful. Please reboot your Pi :-)'
+  exit 0
 else
-  echo '>>> Something went wrong. Please check the messages above :-('
+  echo "Installation failed with ${ERR} errors. Please check the messages above :-("
+  exit 1
 fi
