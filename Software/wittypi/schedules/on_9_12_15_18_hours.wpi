@@ -1,0 +1,15 @@
+# Turn on Raspberry Pi every day at 9, 12, 15 and 18 o'clock
+# Wait for external shutdown (e.g. shutdown command at end of Python script)
+# Active cron job required to run Python script automatically after boot
+
+BEGIN 2025-01-01 09:00:00
+END   2030-01-01 23:59:59
+
+ON    H1 WAIT   # Turn ON at 9:00 (BEGIN of loop), wait for shutdown
+OFF   H2        # Keep OFF state for 2 hours (until 12:00)
+ON    H1 WAIT   # Turn ON at 12:00, wait for shutdown
+OFF   H2        # Keep OFF state for 2 hours (until 15:00)
+ON    H1 WAIT   # Turn ON at 15:00, wait for shutdown
+OFF   H2        # Keep OFF state for 2 hours (until 18:00)
+ON    H1 WAIT   # Turn ON at 18:00, wait for shutdown
+OFF   H14       # Keep OFF state for 14 hours (until 9:00)
