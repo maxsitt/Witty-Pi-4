@@ -63,27 +63,33 @@ fi
 # Enable I2C on Raspberry Pi
 echo
 echo '>>> Enabling I2C...'
-if grep -q 'i2c-bcm2708' /etc/modules; then
-  echo 'Seems i2c-bcm2708 module already exists, skip this step.'
-else
-  echo 'i2c-bcm2708' >> /etc/modules
-fi
-if grep -q 'i2c-dev' /etc/modules; then
-  echo 'Seems i2c-dev module already exists, skip this step.'
-else
-  echo 'i2c-dev' >> /etc/modules
-fi
-
 active_i2c="$(grep -E '^[^#]*dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
 if [ -n "${active_i2c}" ]; then
-    echo 'Seems i2c_arm parameter already set, skip this step'
+    echo 'I2C is already enabled in boot config'
 else
     commented_i2c="$(grep -E '^#.*dtparam=i2c_arm=on' "${BOOT_CONFIG_FILE}" || true)"
     if [ -n "${commented_i2c}" ]; then
+        echo 'Uncommenting i2c_arm parameter in boot config...'
         sed -i 's/^#.*\(dtparam=i2c_arm=on\)/\1/' "${BOOT_CONFIG_FILE}"
     else
+        echo 'Adding i2c_arm parameter to boot config...'
         echo 'dtparam=i2c_arm=on' >> "${BOOT_CONFIG_FILE}"
     fi
+fi
+
+# Ensure i2c-dev module loads on boot
+echo
+echo '>>> Configuring i2c-dev module...'
+MODULES_LOAD_DIR="/etc/modules-load.d"
+MODULES_LOAD_FILE="${MODULES_LOAD_DIR}/i2c.conf"
+
+mkdir -p "${MODULES_LOAD_DIR}"
+
+if [ -f "${MODULES_LOAD_FILE}" ] && grep -q '^i2c-dev' "${MODULES_LOAD_FILE}"; then
+  echo 'i2c-dev module is already configured'
+else
+  echo 'Adding i2c-dev to modules-load.d...'
+  echo 'i2c-dev' > "${MODULES_LOAD_FILE}"
 fi
 
 # Setting Bluetooth to use mini-UART
@@ -117,11 +123,13 @@ if ! command -v gpio &> /dev/null; then
   if [ "${os}" -le 10 ]; then
     install_package wiringpi
   else
-    WIRINGPI_VERSION='3.14'
-    [ "${os}" -eq 11 ] && WIRINGPI_VERSION='3.2'
-
-    WIRINGPI_DEB="wiringpi_${WIRINGPI_VERSION}_${arch}.deb"
-    [ "${os}" -eq 11 ] && WIRINGPI_DEB="wiringpi_${WIRINGPI_VERSION}-bullseye_armhf.deb"
+    if [ "${os}" -eq 11 ]; then
+      WIRINGPI_VERSION='3.2'
+      WIRINGPI_DEB="wiringpi_3.2-bullseye_armhf.deb"
+    else
+      WIRINGPI_VERSION='3.18'
+      WIRINGPI_DEB="wiringpi_${WIRINGPI_VERSION}_${arch}.deb"
+    fi
 
     wget -q "https://github.com/WiringPi/WiringPi/releases/download/${WIRINGPI_VERSION}/${WIRINGPI_DEB}" -O wiringpi.deb || handle_error "Failed to download WiringPi"
     apt install -y ./wiringpi.deb || handle_error "Failed to install WiringPi"
@@ -149,7 +157,31 @@ if [ "${ERR}" -eq 0 ]; then
       # Set up service
       sed -e "s#/home/pi/wittypi#${DIR}#g" wittypi/init.sh > /etc/init.d/wittypi
       chmod +x /etc/init.d/wittypi
-      update-rc.d wittypi defaults || handle_error "Failed to set up service"
+      if command -v systemctl &> /dev/null; then
+        # Create systemd service file
+        cat > /etc/systemd/system/wittypi.service <<EOF
+[Unit]
+Description=Witty Pi Service
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/etc/init.d/wittypi start
+ExecStop=/etc/init.d/wittypi stop
+PIDFile=/run/wittypi_daemon.pid
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable wittypi.service || handle_error "Failed to enable systemd service"
+        echo "Systemd service created. Use 'systemctl status wittypi' to check status."
+      else
+        # Fallback to SysV init for older systems
+        update-rc.d wittypi defaults || handle_error "Failed to set up service"
+      fi
 
       # Create log files
       touch wittypi/{wittyPi,schedule}.log

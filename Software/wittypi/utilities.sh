@@ -114,7 +114,11 @@ if [ -z ${I2C_MC_ADDRESS+x} ]; then
     readonly BOOT_CONFIG_FILE="/boot/firmware/usercfg.txt"
   else
     # Raspberry Pi OS ("$(lsb_release -si)" == "Debian") and others
-    readonly BOOT_CONFIG_FILE="/boot/config.txt"
+    if [ -e "/boot/firmware/config.txt" ]; then
+      readonly BOOT_CONFIG_FILE="/boot/firmware/config.txt"
+    else
+      readonly BOOT_CONFIG_FILE="/boot/config.txt"
+    fi
   fi
 
   TIME_UNKNOWN=0
