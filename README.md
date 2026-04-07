@@ -12,6 +12,7 @@ includes modifications to adapt the software installation and behaviour to the
 The current [modifications](https://github.com/uugear/Witty-Pi-4/compare/main...maxsitt:Witty-Pi-4:main) include:
 
 - [`Software/install.sh`](https://github.com/maxsitt/Witty-Pi-4/blob/main/Software/install.sh)
+- [`Software/wittypi/utilities.sh`](https://github.com/maxsitt/Witty-Pi-4/blob/main/Software/wittypi/utilities.sh)
 - [`Software/wittypi/beforeShutdown.sh`](https://github.com/maxsitt/Witty-Pi-4/blob/main/Software/wittypi/beforeShutdown.sh)
 - [`README.md`](https://github.com/maxsitt/Witty-Pi-4/blob/main/README.md)
 
