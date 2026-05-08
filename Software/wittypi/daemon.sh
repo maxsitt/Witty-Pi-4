@@ -10,6 +10,10 @@ cur_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # utilities
 . "$cur_dir/utilities.sh"
 
+# Graceful shutdown on SIGTERM from systemd (e.g. systemctl stop wittypi)
+trap 'log "Witty Pi daemon received SIGTERM, exiting gracefully."; exit 0' TERM
+trap 'log "Witty Pi daemon received SIGINT, exiting gracefully."; exit 0' INT
+
 TIME_UNKNOWN=1
 log "Witty Pi daemon (v${SOFTWARE_VERSION}) is started."
 
@@ -62,7 +66,7 @@ if [ $has_mc == 1 ] ; then
 
   # make sure register I2C_RTC_CTRL1 is 0
   i2c_write ${I2C_BUS} $I2C_MC_ADDRESS $I2C_RTC_CTRL1 0
-  
+
   # synchronize system and RTC time
   if [ $(rtc_has_bad_time) == 1 ]; then
     log 'RTC has bad time, write system time into RTC'
