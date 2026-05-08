@@ -155,20 +155,16 @@ if [ "${ERR}" -eq 0 ]; then
       find wittypi -name "*.sh" -exec chmod +x {} \;
 
       # Set up service
-      sed -e "s#/home/pi/wittypi#${DIR}#g" wittypi/init.sh > /etc/init.d/wittypi
-      chmod +x /etc/init.d/wittypi
       if command -v systemctl &> /dev/null; then
-        # Create systemd service file
+        # Create native systemd service file pointing directly to daemon.sh
         cat > /etc/systemd/system/wittypi.service <<EOF
 [Unit]
 Description=Witty Pi Service
 After=network.target
 
 [Service]
-Type=forking
-ExecStart=/etc/init.d/wittypi start
-ExecStop=/etc/init.d/wittypi stop
-PIDFile=/run/wittypi_daemon.pid
+Type=simple
+ExecStart=${DIR}/daemon.sh
 Restart=on-failure
 RestartSec=5
 
@@ -180,6 +176,8 @@ EOF
         echo "Systemd service created. Use 'systemctl status wittypi' to check status."
       else
         # Fallback to SysV init for older systems
+        sed -e "s#/home/pi/wittypi#${DIR}#g" wittypi/init.sh > /etc/init.d/wittypi
+        chmod +x /etc/init.d/wittypi
         update-rc.d wittypi defaults || handle_error "Failed to set up service"
       fi
 
